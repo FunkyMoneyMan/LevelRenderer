@@ -228,7 +228,7 @@ public:
 				std::getline(myfile, line);
 				std::string delimiter = ".";
 				std::string MeshName = line.substr(0, line.find(delimiter));
-				std::cout << MeshName << "\n";
+				//std::cout << MeshName << "\n";
 				GW::MATH::GMATRIXF Matrix;
 				int i = 0;
 				for (int y = 0; y < 4; y++) {
@@ -623,6 +623,7 @@ public:
 		// TODO: Part 3b
 		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
 			for (int i = 0; i < it->second.WorldMatrices.size(); i++) {
+				//std::cout << it->second.filename << std::endl;
 				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &FSLogo_meshes[i].materialIndex);
 				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, 0, 0, 0); // TODO: Part 1d, 1h
 			}
