@@ -13,7 +13,7 @@ const char* vertexShaderSource = R"(
 // TODO: 2i
 // an ultra simple hlsl vertex shader
 // TODO: Part 2b
-struct OBJ_ATTRIBUTES
+struct ATTRIBUTES
 {
     float3 Kd; // diffuse reflectivity
     float d; // dissolve (transparency) 
@@ -31,7 +31,7 @@ struct SHADER_MODEL_DATA
     float3 sunDirection, sunColor;
     matrix ViewMatrix, ProjectionMatrix;
     matrix matricies[1024];
-    OBJ_ATTRIBUTES materials[1024];
+    ATTRIBUTES materials[1024];
 	float4 sunAmbient, camPos;
 };
 StructuredBuffer<SHADER_MODEL_DATA> SceneData;
@@ -41,6 +41,7 @@ StructuredBuffer<SHADER_MODEL_DATA> SceneData;
 [[vk::push_constant]]
 cbuffer MESH_INDEX {
 	uint mesh_ID;
+	uint wm_ID;
 };
 // TODO: Part 4a
 // TODO: Part 1f
@@ -66,22 +67,22 @@ OutputStruct main(OBJ_VERT inputObj)
 	// TODO: Part 2i
 	OutputStruct tempStruct;
 	float4 pos = float4(inputObj.pos, 1);
-	tempStruct.posH = mul(pos, SceneData[0].matricies[mesh_ID]);
+	tempStruct.posH = mul(pos, SceneData[0].matricies[wm_ID]);
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ViewMatrix);
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ProjectionMatrix);
 	tempStruct.uvw = inputObj.uvw;
 		// TODO: Part 4e
 	// TODO: Part 4b
 	tempStruct.nrmW = normalize(inputObj.nrm);
-	tempStruct.nrmW = mul(tempStruct.nrmW, SceneData[0].matricies[mesh_ID]);
-	tempStruct.posW = mul(inputObj.pos, (float3x3)SceneData[0].matricies[mesh_ID]);
+	tempStruct.nrmW = mul(tempStruct.nrmW, SceneData[0].matricies[wm_ID]);
+	tempStruct.posW = mul(inputObj.pos, (float3x3)SceneData[0].matricies[wm_ID]);
 		// TODO: Part 4e
     return tempStruct;
 }
 )";
 // Simple Pixel Shader
 const char* pixelShaderSource = R"(
-struct OBJ_ATTRIBUTES
+struct ATTRIBUTES
 {
     float3 Kd; // diffuse reflectivity
     float d; // dissolve (transparency) 
@@ -99,7 +100,7 @@ struct SHADER_MODEL_DATA
     float3 sunDirection, sunColor;
     matrix ViewMatrix, ProjectionMatrix;
     matrix matricies[1024];
-    OBJ_ATTRIBUTES materials[1024];
+    ATTRIBUTES materials[1024];
     float4 sunAmbient, camPos;
 };
 StructuredBuffer<SHADER_MODEL_DATA> SceneData;
@@ -110,6 +111,7 @@ StructuredBuffer<SHADER_MODEL_DATA> SceneData;
 cbuffer MESH_INDEX
 {
     uint mesh_ID;
+    uint wm_ID;
 };
 // TODO: Part 4a
 // TODO: Part 1f
@@ -151,7 +153,7 @@ struct SHADER_MODEL_DATA {
 	GW::MATH::GVECTORF sunDirection, sunColor;
 	GW::MATH::GMATRIXF ViewMatrix, ProjectionMatrix;
 	GW::MATH::GMATRIXF matricies[MAX_SUBMESH_PER_DRAW];
-	OBJ_ATTRIBUTES materials[MAX_SUBMESH_PER_DRAW];
+	H2B::ATTRIBUTES materials[MAX_SUBMESH_PER_DRAW];
 	GW::MATH::GVECTORF sunAmbient, camPos;
 };
 struct Mesh_Struct {
@@ -159,10 +161,10 @@ struct Mesh_Struct {
 	std::string filename;
 	std::string filepath;
 	H2B::Parser h2bParser;
-	VkDeviceMemory vertexVkDeviceMemory;
-	VkBuffer vertexVkBuffer;
-	VkDeviceMemory indexVkDeviceMemory;
-	VkBuffer indexVkBuffer;
+};
+struct MESH_INDEX {
+	unsigned mesh_ID;
+	unsigned wm_ID;
 };
 // Creation, Rendering & Cleanup
 class Renderer
@@ -179,6 +181,13 @@ class Renderer
 	std::chrono::steady_clock::time_point now;
 
 	std::map<std::string, Mesh_Struct> MeshMap;
+	std::vector<H2B::VERTEX> Vertexes;
+	std::vector<unsigned> Indexes;
+	std::vector<unsigned> VertexOffsets;
+	std::vector<unsigned> IndexOffsets;
+	int VertexSize;
+	int IndexSize;
+
 	
 	// what we need at a minimum to draw a triangle
 	VkDevice device = nullptr;
@@ -258,6 +267,23 @@ public:
 					MeshMap[MeshName].WorldMatrices.push_back(Matrix);
 			}
 		}
+		int Vcounter = 0;
+		int Icounter = 0;
+		VertexOffsets.push_back(0);
+		IndexOffsets.push_back(0);
+		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
+			Vertexes.insert(Vertexes.end(), it->second.h2bParser.vertices.begin(), it->second.h2bParser.vertices.end());
+			Indexes.insert(Indexes.end(), it->second.h2bParser.indices.begin(), it->second.h2bParser.indices.end());
+			VertexOffsets.push_back(Vcounter + it->second.h2bParser.vertices.size());
+			Vcounter += it->second.h2bParser.vertices.size();
+			IndexOffsets.push_back(Icounter + it->second.h2bParser.indices.size());
+			Icounter += it->second.h2bParser.indices.size();
+			//a.insert(a.end(), b.begin(), b.end());
+
+		}
+		//sizeof(std::vector<int>) + (sizeof(int) * MyVector.size())
+		VertexSize = sizeof(std::vector<H2B::VECTOR>) + (sizeof(H2B::VECTOR) * Vertexes.size());
+		IndexSize = sizeof(Indexes) * Indexes.size();
 		myfile.close();
 		return true;
 	}
@@ -272,11 +298,11 @@ public:
 		unsigned int width, height;
 		win.GetClientWidth(width);
 		win.GetClientHeight(height);
-		ParseFile();
+		if (!ParseFile())
+			exit(69);
 		//ShowCursor(false);
 		// TODO: Part 2a
 		MatrixProxy.IdentityF(WorldMatrix);
-		MatrixProxy.IdentityF(SecondWorldMatrix);
 		GW::MATH::GVECTORF _eye = { 0.75f, 0.25f, -1.5f, 0 };
 		GW::MATH::GVECTORF _at = { 0.15f, 0.75f, 0, 0 };
 		GW::MATH::GVECTORF _up = { 0, 1, 0, 0 };
@@ -289,13 +315,20 @@ public:
 		LightColorVector = { 0.9f, 0.9f, 1.0f, 1.0f };
 		// TODO: Part 2b
 		ShaderModelData.matricies[0] = WorldMatrix;
-		ShaderModelData.matricies[1] = SecondWorldMatrix;
 		ShaderModelData.sunDirection = LightDirectionVector;
 		ShaderModelData.sunColor = LightColorVector;
 		ShaderModelData.ViewMatrix = ViewMatrix;
 		ShaderModelData.ProjectionMatrix = ProjectionMatrix;
-		for (int i = 0; i < 2; i++)
-			ShaderModelData.materials[i] = FSLogo_materials[i].attrib;
+		int externalI = 0;
+		int externalZ = 1;
+		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
+			for (int y = 0; y < it->second.h2bParser.materialCount; y++, externalI++)
+				ShaderModelData.materials[externalI] = it->second.h2bParser.materials[y].attrib;
+			for (int y = 0; y < it->second.WorldMatrices.size(); y++, externalZ++)
+				ShaderModelData.matricies[externalZ] = it->second.WorldMatrices[y];
+		}
+			
+		
 		// TODO: Part 4g
 		ShaderModelData.sunAmbient = { 0.25f, 0.25f, 0.35f, 1 };
 		ShaderModelData.camPos = { 0.75f, 0.25f, -1.5f, 1 };
@@ -310,19 +343,17 @@ public:
 		// TODO: Part 1c
 		// Create Vertex Buffer
 		// Transfer triangle data to the vertex buffer. (staging would be prefered here)
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
-			GvkHelper::create_buffer(physicalDevice, device, sizeof(it->second.h2bParser.vertices),
-				VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &it->second.vertexVkBuffer, &it->second.vertexVkDeviceMemory);
-			GvkHelper::write_to_buffer(device, it->second.vertexVkDeviceMemory, &it->second.h2bParser.vertices, sizeof(it->second.h2bParser.vertices));
-		}
+		H2B::VERTEX* tempVec = &Vertexes[0];
+		GvkHelper::create_buffer(physicalDevice, device, sizeof(*tempVec) * Vertexes.size(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertexHandle, &vertexData);
+		GvkHelper::write_to_buffer(device, vertexData, &*tempVec, sizeof(*tempVec) * Vertexes.size());
 		// TODO: Part 1g
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
-			GvkHelper::create_buffer(physicalDevice, device, sizeof(it->second.h2bParser.indices),
-				VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &it->second.indexVkBuffer, &it->second.indexVkDeviceMemory);
-			GvkHelper::write_to_buffer(device, it->second.indexVkDeviceMemory, &it->second.h2bParser.indices, sizeof(it->second.h2bParser.indices));
-		}
+		unsigned* tempInd = &Indexes[0];
+		GvkHelper::create_buffer(physicalDevice, device, sizeof(*tempInd) * Indexes.size(),
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &indiciesBuffer, &indiciesData);
+		GvkHelper::write_to_buffer(device, indiciesData, &*tempInd, sizeof(*tempInd) * Indexes.size());
 
 		// TODO: Part 2d
 		unsigned count = 0;
@@ -391,7 +422,7 @@ public:
 		// Vertex Input State
 		VkVertexInputBindingDescription vertex_binding_description = {};
 		vertex_binding_description.binding = 0;
-		vertex_binding_description.stride = sizeof(OBJ_VERT);
+		vertex_binding_description.stride = sizeof(H2B::VERTEX);
 		vertex_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 		VkVertexInputAttributeDescription vertex_attribute_description[3] = {
 			{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
@@ -611,21 +642,25 @@ public:
 
 		// now we can draw
 		VkDeviceSize offsets[] = { 0 };
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it)
-			vkCmdBindVertexBuffers(commandBuffer, 0, 1, &it->second.vertexVkBuffer, offsets);
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexHandle, offsets);
 		// TODO: Part 1h
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it)
-			vkCmdBindIndexBuffer(commandBuffer, it->second.indexVkBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindIndexBuffer(commandBuffer, indiciesBuffer, 0, VK_INDEX_TYPE_UINT32);
 		// TODO: Part 4d
 		GvkHelper::write_to_buffer(device, VectorDeviceMemory[currentBuffer], &ShaderModelData, sizeof(ShaderModelData));
 		// TODO: Part 2i
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet[currentBuffer], 0, nullptr);
 		// TODO: Part 3b
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
-			for (int i = 0; i < it->second.WorldMatrices.size(); i++) {
+		int offSet = 0;
+		unsigned outerCount = 1;
+		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it, offSet++) {
+			for (int i = 0; i < it->second.WorldMatrices.size(); i++, outerCount++) {
+				MESH_INDEX tempMesh = { offSet, outerCount
+					//unsigned mesh_ID;
+					//unsigned wm_ID;
+				};
 				//std::cout << it->second.filename << std::endl;
-				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(int), &FSLogo_meshes[i].materialIndex);
-				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, 0, 0, 0); // TODO: Part 1d, 1h
+				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MESH_INDEX), &tempMesh);
+				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, IndexOffsets[offSet], 0, 0); // TODO: Part 1d, 1h
 			}
 			// TODO: Part 3d
 		}
@@ -640,7 +675,7 @@ public:
 		MatrixProxy.InverseF(viewCopyMatrix, viewCopyMatrix);
 		// TODO: Part 4c
 		// TODO: Part 4d
-		const float Camera_Speed = 0.3f;
+		const float Camera_Speed = 1.3f;
 		float spacebar;
 		Ginput.GetState(23, spacebar);
 		float leftshift;
@@ -725,12 +760,6 @@ private:
 		}
 		VectorVkBuffer.clear();
 		VectorDeviceMemory.clear();
-		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
-				vkDestroyBuffer(device, it->second.indexVkBuffer, nullptr);
-				vkFreeMemory(device, it->second.indexVkDeviceMemory, nullptr);
-				vkDestroyBuffer(device, it->second.vertexVkBuffer, nullptr);
-				vkFreeMemory(device, it->second.vertexVkDeviceMemory, nullptr);
-		}
 		vkDestroyBuffer(device, vertexHandle, nullptr);
 		vkFreeMemory(device, vertexData, nullptr);
 		vkDestroyShaderModule(device, vertexShader, nullptr);
