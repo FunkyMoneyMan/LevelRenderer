@@ -59,7 +59,7 @@ struct OutputStruct
 	float3 uvw : TEXTCOORD0;
 };
 // TODO: Part 4b
-OutputStruct main(OBJ_VERT inputObj)
+OutputStruct main(OBJ_VERT inputObj, uint instanceId : SV_INSTANCEID)
 {
     // TODO: Part 1h
     //inputObj.pos[2] += 0.75f;
@@ -67,15 +67,15 @@ OutputStruct main(OBJ_VERT inputObj)
 	// TODO: Part 2i
 	OutputStruct tempStruct;
 	float4 pos = float4(inputObj.pos, 1);
-	tempStruct.posH = mul(pos, SceneData[0].matricies[wm_ID]);
+	tempStruct.posH = mul(pos, SceneData[0].matricies[instanceId]);
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ViewMatrix);
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ProjectionMatrix);
 	tempStruct.uvw = inputObj.uvw;
 		// TODO: Part 4e
 	// TODO: Part 4b
 	tempStruct.nrmW = normalize(inputObj.nrm);
-	tempStruct.nrmW = mul(tempStruct.nrmW, SceneData[0].matricies[wm_ID]);
-	tempStruct.posW = mul(inputObj.pos, (float3x3)SceneData[0].matricies[wm_ID]);
+	tempStruct.nrmW = mul(tempStruct.nrmW, SceneData[0].matricies[instanceId]);
+	tempStruct.posW = mul(inputObj.pos, (float3x3)SceneData[0].matricies[instanceId]);
 		// TODO: Part 4e
     return tempStruct;
 }
@@ -660,7 +660,7 @@ public:
 				};
 				//std::cout << it->second.filename << std::endl;
 				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MESH_INDEX), &tempMesh);
-				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, IndexOffsets[offSet], 0, 0); // TODO: Part 1d, 1h
+				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, IndexOffsets[offSet], VertexOffsets[offSet], outerCount); // TODO: Part 1d, 1h
 			}
 			// TODO: Part 3d
 		}
@@ -675,7 +675,7 @@ public:
 		MatrixProxy.InverseF(viewCopyMatrix, viewCopyMatrix);
 		// TODO: Part 4c
 		// TODO: Part 4d
-		const float Camera_Speed = 1.3f;
+		const float Camera_Speed = 4.3f;
 		float spacebar;
 		Ginput.GetState(23, spacebar);
 		float leftshift;
