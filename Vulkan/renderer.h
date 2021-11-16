@@ -133,6 +133,7 @@ struct InputStruct
 // TODO: Part 4b
 float4 main(InputStruct inputObj) : SV_TARGET
 {
+	//return float4(SceneData[0].materials[mesh_ID].Kd, 1);
 	//inputObj.nrmW = normalize(inputObj.nrmW);
     float lightratio = saturate(dot(-SceneData[0].sunDirection, inputObj.nrmW));
     float3 result = (saturate(lightratio + SceneData[0].sunAmbient) * SceneData[0].sunColor) * SceneData[0].materials[mesh_ID].Kd;
@@ -185,6 +186,8 @@ class Renderer
 	std::vector<unsigned> Indexes;
 	std::vector<unsigned> VertexOffsets;
 	std::vector<unsigned> IndexOffsets;
+	std::vector<unsigned> MatrixOffset;
+	std::vector<unsigned> MaterialOffset;
 	int VertexSize;
 	int IndexSize;
 
@@ -269,17 +272,23 @@ public:
 		}
 		int Vcounter = 0;
 		int Icounter = 0;
+		int mCount = 0;
+		int matCount = 0;
 		VertexOffsets.push_back(0);
 		IndexOffsets.push_back(0);
+		MatrixOffset.push_back(0);
+		MaterialOffset.push_back(0);
 		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
 			Vertexes.insert(Vertexes.end(), it->second.h2bParser.vertices.begin(), it->second.h2bParser.vertices.end());
 			Indexes.insert(Indexes.end(), it->second.h2bParser.indices.begin(), it->second.h2bParser.indices.end());
-			VertexOffsets.push_back(Vcounter + it->second.h2bParser.vertices.size());
 			Vcounter += it->second.h2bParser.vertices.size();
-			IndexOffsets.push_back(Icounter + it->second.h2bParser.indices.size());
+			VertexOffsets.push_back(Vcounter);
 			Icounter += it->second.h2bParser.indices.size();
-			//a.insert(a.end(), b.begin(), b.end());
-
+			IndexOffsets.push_back(Icounter);
+			mCount += it->second.WorldMatrices.size();
+			MatrixOffset.push_back(mCount);
+			matCount += it->second.h2bParser.materialCount;
+			MaterialOffset.push_back(matCount);
 		}
 		//sizeof(std::vector<int>) + (sizeof(int) * MyVector.size())
 		VertexSize = sizeof(std::vector<H2B::VECTOR>) + (sizeof(H2B::VECTOR) * Vertexes.size());
@@ -320,7 +329,7 @@ public:
 		ShaderModelData.ViewMatrix = ViewMatrix;
 		ShaderModelData.ProjectionMatrix = ProjectionMatrix;
 		int externalI = 0;
-		int externalZ = 1;
+		int externalZ = 0;
 		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
 			for (int y = 0; y < it->second.h2bParser.materialCount; y++, externalI++)
 				ShaderModelData.materials[externalI] = it->second.h2bParser.materials[y].attrib;
@@ -452,7 +461,7 @@ public:
 		rasterization_create_info.rasterizerDiscardEnable = VK_FALSE;
 		rasterization_create_info.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterization_create_info.lineWidth = 1.0f;
-		rasterization_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+		rasterization_create_info.cullMode = VK_CULL_MODE_NONE;
 		rasterization_create_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterization_create_info.depthClampEnable = VK_FALSE;
 		rasterization_create_info.depthBiasEnable = VK_FALSE;
@@ -570,7 +579,7 @@ public:
 		// TODO: Part 3c
 		VkPushConstantRange pushConstantRange = {};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-		pushConstantRange.size = sizeof(unsigned);
+		pushConstantRange.size = sizeof(MESH_INDEX);
 		pipeline_layout_create_info.pushConstantRangeCount = 1;
 		pipeline_layout_create_info.pPushConstantRanges = &pushConstantRange;
 		vkCreatePipelineLayout(device, &pipeline_layout_create_info, 
@@ -610,8 +619,6 @@ public:
 		std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 		std::chrono::duration<double> elapsed_seconds = end - now;
 		end = now;
-		MatrixProxy.RotateYGlobalF(SecondWorldMatrix, -elapsed_seconds.count(), SecondWorldMatrix);
-		ShaderModelData.matricies[1] = SecondWorldMatrix;
 		// TODO: Part 4d
 		// grab the current Vulkan commandBuffer
 		unsigned int currentBuffer;
@@ -653,18 +660,12 @@ public:
 		int offSet = 0;
 		unsigned outerCount = 1;
 		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it, offSet++) {
-			for (int i = 0; i < it->second.WorldMatrices.size(); i++, outerCount++) {
-				MESH_INDEX tempMesh = { offSet, outerCount
-					//unsigned mesh_ID;
-					//unsigned wm_ID;
-				};
-				//std::cout << it->second.filename << std::endl;
+			for (unsigned i = 0; i < it->second.h2bParser.meshCount; i++) {
+				MESH_INDEX tempMesh = { MaterialOffset[offSet] + it->second.h2bParser.meshes[i].materialIndex, outerCount };
 				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(MESH_INDEX), &tempMesh);
-				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.indexCount, 1, IndexOffsets[offSet], VertexOffsets[offSet], outerCount); // TODO: Part 1d, 1h
+				vkCmdDrawIndexed(commandBuffer, it->second.h2bParser.meshes[i].drawInfo.indexCount, it->second.WorldMatrices.size(), IndexOffsets[offSet] + it->second.h2bParser.meshes[i].drawInfo.indexOffset, VertexOffsets[offSet], MatrixOffset[offSet]);
 			}
-			// TODO: Part 3d
 		}
-		
 	}
 
 	void UpdateCamera() {
@@ -741,6 +742,7 @@ public:
 		// TODO: Part 4g
 		// TODO: Part 4c
 		//ViewMatrix = viewCopyMatrix;
+		ShaderModelData.camPos = pos;
 		MatrixProxy.InverseF(viewCopyMatrix, ShaderModelData.ViewMatrix);
 	}
 	
