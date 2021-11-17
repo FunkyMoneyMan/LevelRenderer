@@ -9,7 +9,8 @@
 #define GATEWARE_DISABLE_GRASTERSURFACE // we have another template for this
 #define GATEWARE_DISABLE_GOPENGLSURFACE // we have another template for this
 #define GATEWARE_ENABLE_MATH
-#define GATEWARE_ENABLE_INPUT 
+#define GATEWARE_ENABLE_INPUT
+#define GATEWARE_ENABLE_AUDIO
 // With what we want & what we don't defined we can include the API
 #include "../Gateware/Gateware.h"
 #include "renderer.h"
@@ -42,7 +43,7 @@ int main()
 		const char* debugLayers[] = {
 			"VK_LAYER_KHRONOS_validation", // standard validation layer
 			//"VK_LAYER_LUNARG_standard_validation", // add if not on MacOS
-			//"VK_LAYER_RENDERDOC_Capture" // add this if you have installed RenderDoc
+			"VK_LAYER_RENDERDOC_Capture" // add this if you have installed RenderDoc
 		};
 		if (+vulkan.Create(	win, GW::GRAPHICS::DEPTH_BUFFER_SUPPORT, 
 							sizeof(debugLayers)/sizeof(debugLayers[0]),

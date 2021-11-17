@@ -4,6 +4,7 @@
 #include "h2bParser.h"
 #include "shaderc/shaderc.h" // needed for compiling shaders at runtime
 #define MAX_SUBMESH_PER_DRAW 1024
+#define PLAYMUSIC false
 #ifdef _WIN32 // must use MT platform DLL libraries on windows
 	#pragma comment(lib, "shaderc_combined.lib") 
 #endif
@@ -68,6 +69,7 @@ OutputStruct main(OBJ_VERT inputObj, uint instanceId : SV_INSTANCEID)
 	OutputStruct tempStruct;
 	float4 pos = float4(inputObj.pos, 1);
 	tempStruct.posH = mul(pos, SceneData[0].matricies[instanceId]);
+	tempStruct.posW = tempStruct.posH;
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ViewMatrix);
 	tempStruct.posH = mul(tempStruct.posH, SceneData[0].ProjectionMatrix);
 	tempStruct.uvw = inputObj.uvw;
@@ -75,7 +77,7 @@ OutputStruct main(OBJ_VERT inputObj, uint instanceId : SV_INSTANCEID)
 	// TODO: Part 4b
 	tempStruct.nrmW = normalize(inputObj.nrm);
 	tempStruct.nrmW = mul(tempStruct.nrmW, SceneData[0].matricies[instanceId]);
-	tempStruct.posW = mul(inputObj.pos, (float3x3)SceneData[0].matricies[instanceId]);
+	//tempStruct.posW = mul(inputObj.pos, SceneData[0].matricies[instanceId]);
 		// TODO: Part 4e
     return tempStruct;
 }
@@ -131,21 +133,33 @@ struct InputStruct
 
 // an ultra simple hlsl pixel shader
 // TODO: Part 4b
+float4 CalculateSpecular(float3 camPos, float3 lightDir, float3 surfacePos, float3 surfaceNormal, ATTRIBUTES mat)
+{
+    float3 toCam = normalize(camPos - surfacePos);
+    float3 toLight = lightDir;
+    float3 reflec = reflect(toLight, surfaceNormal);
+    float dotResult = saturate(pow(dot(toCam, reflec), mat.Ns));
+    float4 spec = float4(mat.Ks * dotResult, 0.0f);
+    return saturate(spec);
+};
+
 float4 main(InputStruct inputObj) : SV_TARGET
 {
-	//return float4(SceneData[0].materials[mesh_ID].Kd, 1);
-	//inputObj.nrmW = normalize(inputObj.nrmW);
-    float lightratio = saturate(dot(-SceneData[0].sunDirection, inputObj.nrmW));
+	//return float4(inputObj.nrmW, 1);
+    float lightratio = saturate(dot(-normalize(SceneData[0].sunDirection), normalize(inputObj.nrmW)));
     float3 result = (saturate(lightratio + SceneData[0].sunAmbient) * SceneData[0].sunColor) * SceneData[0].materials[mesh_ID].Kd;
-	
-    float3 viewDir = normalize(SceneData[0].camPos - inputObj.posW);
-    float3 halfVector = normalize((-SceneData[0].sunDirection) + viewDir);
-    float3 intensity = max(pow(saturate(dot(inputObj.nrmW, halfVector)), SceneData[0].materials[mesh_ID].Ns), 0);
-    float3 reflectedLight = SceneData[0].sunColor * SceneData[0].materials[mesh_ID].Ks * intensity;
-    return float4(reflectedLight + result, 1); // TODO: Part 1a
-	// TODO: Part 3a
-	// TODO: Part 4c
-	// TODO: Part 4g (half-vector or reflect method your choice)
+	//result = lightratio * SceneData[0].sunColor;
+	float4 specular = CalculateSpecular(SceneData[0].camPos.xyz, SceneData[0].sunDirection, inputObj.posW, inputObj.nrmW, SceneData[0].materials[mesh_ID]);
+
+
+    //float3 viewDir = normalize(SceneData[0].camPos.xyz - inputObj.posW);
+    //float3 halfVector = normalize(-SceneData[0].sunDirection + viewDir);
+    //float intensity = pow(saturate(dot(normalize(inputObj.nrmW), halfVector)), SceneData[0].materials[mesh_ID].Ns);
+    //float3 reflectedLight = /*SceneData[0].sunColor **/ SceneData[0].materials[mesh_ID].Ks * intensity;
+
+	return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + specular;
+    //return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + float4(reflectedLight, 0); // TODO: Part 1a
+
 	
 }
 )";
@@ -178,6 +192,10 @@ class Renderer
 	GW::GRAPHICS::GVulkanSurface vlk;
 	GW::CORE::GEventReceiver shutdown;
 
+	GW::AUDIO::GMusic GMusic;
+	GW::AUDIO::GSound GSound;
+	GW::AUDIO::GAudio GAudio;
+	std::vector<const char*> Songs;
 	GW::INPUT::GInput Ginput;
 	std::chrono::steady_clock::time_point now;
 
@@ -190,7 +208,7 @@ class Renderer
 	std::vector<unsigned> MaterialOffset;
 	int VertexSize;
 	int IndexSize;
-
+	int SongChoice = 0;
 	
 	// what we need at a minimum to draw a triangle
 	VkDevice device = nullptr;
@@ -311,6 +329,15 @@ public:
 			exit(69);
 		//ShowCursor(false);
 		// TODO: Part 2a
+		if (PLAYMUSIC) {
+			Songs.push_back("../SayGoodbye.wav");
+			Songs.push_back("../SadLittleMan.wav");
+			Songs.push_back("../AllStar.wav");
+			GAudio.Create();
+			GMusic.Create(Songs[SongChoice], GAudio);
+			GMusic.Play();
+		}
+
 		MatrixProxy.IdentityF(WorldMatrix);
 		GW::MATH::GVECTORF _eye = { 0.75f, 0.25f, -1.5f, 0 };
 		GW::MATH::GVECTORF _at = { 0.15f, 0.75f, 0, 0 };
@@ -319,7 +346,7 @@ public:
 		float ar = 0;
 		vlk.GetAspectRatio(ar);
 		MatrixProxy.ProjectionVulkanLHF(1.13446f, ar, 0.1f, 100.0f, ProjectionMatrix);
-		LightDirectionVector = { -1.0f, -1.0f, 2.0f, 1.0f };
+		LightDirectionVector = { -1.0f, 0.5f, 1.0f, 1.0f };
 		VectorProxy.NormalizeF(LightDirectionVector, LightDirectionVector);
 		LightColorVector = { 0.9f, 0.9f, 1.0f, 1.0f };
 		// TODO: Part 2b
@@ -676,9 +703,48 @@ public:
 		MatrixProxy.InverseF(viewCopyMatrix, viewCopyMatrix);
 		// TODO: Part 4c
 		// TODO: Part 4d
-		const float Camera_Speed = 4.3f;
+		const float Camera_Speed = 5.0f;
 		float spacebar;
+		float SongChange;
+		static bool pushIt;
+		static bool changeSong;
+		static bool changed;
+		static bool played;
 		Ginput.GetState(23, spacebar);
+		Ginput.GetState(62, SongChange);
+		if (PLAYMUSIC) {
+			if (spacebar != 0)
+				pushIt = true;
+			else {
+				pushIt = false;
+				played = false;
+			}
+			if (SongChange != 0)
+				changeSong = true;
+			else {
+				changeSong = false;
+				changed = false;
+			}
+			bool isplaying = false;
+			GSound.isPlaying(isplaying);
+			if (!isplaying)
+				GMusic.Resume();
+			if (pushIt && !played && !isplaying) {
+				GMusic.Pause();
+				GSound.Create("../PushIt.wav", GAudio);
+				GSound.Play();
+				pushIt = false;
+				played = true;
+			}
+			if (changeSong && !changed) {
+				SongChoice++;
+				GMusic.Stop();
+				GMusic.Create(Songs[SongChoice % 3], GAudio);
+				GMusic.Play();
+				changeSong = false;
+				changed = true;
+			}
+		}
 		float leftshift;
 		Ginput.GetState(14, leftshift);
 		bool isConnected = false;
