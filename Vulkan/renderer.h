@@ -29,7 +29,7 @@ struct ATTRIBUTES
 };
 struct SHADER_MODEL_DATA
 {
-    float3 sunDirection, sunColor;
+    float4 sunDirection, sunColor;
     matrix ViewMatrix, ProjectionMatrix;
     matrix matricies[1024];
     ATTRIBUTES materials[1024];
@@ -99,7 +99,7 @@ struct ATTRIBUTES
 };
 struct SHADER_MODEL_DATA
 {
-    float3 sunDirection, sunColor;
+    float4 sunDirection, sunColor;
     matrix ViewMatrix, ProjectionMatrix;
     matrix matricies[1024];
     ATTRIBUTES materials[1024];
@@ -133,36 +133,41 @@ struct InputStruct
 
 // an ultra simple hlsl pixel shader
 // TODO: Part 4b
-float4 CalculateSpecular(float3 camPos, float3 lightDir, float3 surfacePos, float3 surfaceNormal, ATTRIBUTES mat)
-{
-    float3 toCam = normalize(camPos - surfacePos);
-    float3 toLight = lightDir;
-    float3 reflec = reflect(toLight, surfaceNormal);
-    float dotResult = saturate(pow(dot(toCam, reflec), mat.Ns));
-    float4 spec = float4(mat.Ks * dotResult, 0.0f);
-    return saturate(spec);
-};
+
 
 float4 main(InputStruct inputObj) : SV_TARGET
 {
-	//return float4(inputObj.nrmW, 1);
-    float lightratio = saturate(dot(-normalize(SceneData[0].sunDirection), normalize(inputObj.nrmW)));
-    float3 result = (saturate(lightratio + SceneData[0].sunAmbient) * SceneData[0].sunColor) * SceneData[0].materials[mesh_ID].Kd;
-	//result = lightratio * SceneData[0].sunColor;
-	float4 specular = CalculateSpecular(SceneData[0].camPos.xyz, SceneData[0].sunDirection, inputObj.posW, inputObj.nrmW, SceneData[0].materials[mesh_ID]);
 
+	inputObj.nrmW = normalize(inputObj.nrmW);
+	float3 lightDir = normalize(SceneData[0].sunDirection.xyz);
 
-    //float3 viewDir = normalize(SceneData[0].camPos.xyz - inputObj.posW);
-    //float3 halfVector = normalize(-SceneData[0].sunDirection + viewDir);
-    //float intensity = pow(saturate(dot(normalize(inputObj.nrmW), halfVector)), SceneData[0].materials[mesh_ID].Ns);
-    //float3 reflectedLight = /*SceneData[0].sunColor **/ SceneData[0].materials[mesh_ID].Ks * intensity;
-
-	return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + specular;
-    //return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + float4(reflectedLight, 0); // TODO: Part 1a
-
+	float4 final;
+	final = saturate(dot(-lightDir, inputObj.nrmW)) * SceneData[0].sunColor;
+	final += SceneData[0].sunAmbient;
+	final *= float4(SceneData[0].materials[mesh_ID].Kd, 0.0f);
 	
+	float3 viewDir = normalize(SceneData[0].camPos.xyz - inputObj.posW);
+	float3 reflected = reflect(lightDir, inputObj.nrmW);
+	float intensity = pow(saturate(dot(viewDir, reflected)), SceneData[0].materials[mesh_ID].Ns);
+	final += float4(SceneData[0].sunColor.xyz * SceneData[0].materials[mesh_ID].Ks * intensity, 0.0f);
+
+	return final;
 }
 )";
+	////return float4(inputObj.nrmW, 1);
+ //   float lightratio = saturate(dot(-normalize(SceneData[0].sunDirection), normalize(inputObj.nrmW)));
+ //   float3 result = (saturate(lightratio + SceneData[0].sunAmbient) * SceneData[0].sunColor) * SceneData[0].materials[mesh_ID].Kd;
+	////result = lightratio * SceneData[0].sunColor;
+	//float4 specular = CalculateSpecular(SceneData[0].camPos.xyz, SceneData[0].sunDirection, inputObj.posW, inputObj.nrmW, SceneData[0].materials[mesh_ID]);
+
+
+ //   //float3 viewDir = normalize(SceneData[0].camPos.xyz - inputObj.posW);
+ //   //float3 halfVector = normalize(-SceneData[0].sunDirection + viewDir);
+ //   //float intensity = pow(saturate(dot(normalize(inputObj.nrmW), halfVector)), SceneData[0].materials[mesh_ID].Ns);
+ //   //float3 reflectedLight = /*SceneData[0].sunColor **/ SceneData[0].materials[mesh_ID].Ks * intensity;
+
+	//return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + specular;
+ //   //return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + float4(reflectedLight, 0); // TODO: Part 1a
 
 struct SHADER_MODEL_DATA {
 	GW::MATH::GVECTORF sunDirection, sunColor;
@@ -209,7 +214,7 @@ class Renderer
 	int VertexSize;
 	int IndexSize;
 	int SongChoice = 0;
-	
+	int CurrentScene = 0;
 	// what we need at a minimum to draw a triangle
 	VkDevice device = nullptr;
 	VkBuffer vertexHandle = nullptr;
@@ -246,9 +251,9 @@ class Renderer
 	// TODO: Part 4g
 public:
 
-	bool ParseFile() {
+	bool ParseFile(const char* file) {
 		std::string line;
-		std::ifstream myfile("../GameLevel.txt");
+		std::ifstream myfile(file);
 		if (!myfile.is_open()) {
 			std::cout << "Unable to open file";
 			return false;
@@ -325,7 +330,7 @@ public:
 		unsigned int width, height;
 		win.GetClientWidth(width);
 		win.GetClientHeight(height);
-		if (!ParseFile())
+		if (!ParseFile("../GameLevel.txt"))
 			exit(69);
 		//ShowCursor(false);
 		// TODO: Part 2a
@@ -346,8 +351,8 @@ public:
 		float ar = 0;
 		vlk.GetAspectRatio(ar);
 		MatrixProxy.ProjectionVulkanLHF(1.13446f, ar, 0.1f, 100.0f, ProjectionMatrix);
-		LightDirectionVector = { -1.0f, 0.5f, 1.0f, 1.0f };
-		VectorProxy.NormalizeF(LightDirectionVector, LightDirectionVector);
+		LightDirectionVector = { -1.0f, -1.0f, 1.0f, 0.0f };
+		//VectorProxy.NormalizeF(LightDirectionVector, LightDirectionVector);
 		LightColorVector = { 0.9f, 0.9f, 1.0f, 1.0f };
 		// TODO: Part 2b
 		ShaderModelData.matricies[0] = WorldMatrix;
@@ -694,7 +699,51 @@ public:
 			}
 		}
 	}
-
+	void ChangeScene() {
+		vkDeviceWaitIdle(device);
+		vkDestroyBuffer(device, indiciesBuffer, nullptr);
+		vkFreeMemory(device, indiciesData, nullptr);
+		// TODO: Part 2d
+		vkDestroyBuffer(device, vertexHandle, nullptr);
+		vkFreeMemory(device, vertexData, nullptr);
+		Vertexes.clear();
+		Indexes.clear();
+		MeshMap.clear();
+		if (CurrentScene == 0) {
+			if (!ParseFile("../GameLevel.txt"))
+				exit(69);
+			std::cout << "First";
+			CurrentScene = 1;
+		}
+		else {
+			if (!ParseFile("../GameLevel.txt"))
+				exit(69);
+			std::cout << "Second";
+			CurrentScene = 0;
+		}
+		int externalI = 0;
+		int externalZ = 0;
+		for (std::map<std::string, Mesh_Struct>::iterator it = MeshMap.begin(); it != MeshMap.end(); ++it) {
+			for (int y = 0; y < it->second.h2bParser.materialCount; y++, externalI++)
+				ShaderModelData.materials[externalI] = it->second.h2bParser.materials[y].attrib;
+			for (int y = 0; y < it->second.WorldMatrices.size(); y++, externalZ++)
+				ShaderModelData.matricies[externalZ] = it->second.WorldMatrices[y];
+		}
+		VkPhysicalDevice physicalDevice = nullptr;
+		vlk.GetDevice((void**)&device);
+		vlk.GetPhysicalDevice((void**)&physicalDevice);
+		H2B::VERTEX* tempVec = &Vertexes[0];
+		GvkHelper::create_buffer(physicalDevice, device, sizeof(*tempVec) * Vertexes.size(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &vertexHandle, &vertexData);
+		GvkHelper::write_to_buffer(device, vertexData, &*tempVec, sizeof(*tempVec) * Vertexes.size());
+		// TODO: Part 1g
+		unsigned* tempInd = &Indexes[0];
+		GvkHelper::create_buffer(physicalDevice, device, sizeof(*tempInd) * Indexes.size(),
+			VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &indiciesBuffer, &indiciesData);
+		GvkHelper::write_to_buffer(device, indiciesData, &*tempInd, sizeof(*tempInd) * Indexes.size());
+	}
 	void UpdateCamera() {
 		auto end = std::chrono::steady_clock::now();
 		std::chrono::duration<double> elapsed_seconds = end - now;
@@ -704,6 +753,7 @@ public:
 		// TODO: Part 4c
 		// TODO: Part 4d
 		const float Camera_Speed = 5.0f;
+
 		float spacebar;
 		float SongChange;
 		static bool pushIt;
@@ -745,6 +795,22 @@ public:
 				changed = true;
 			}
 		}
+		static bool SceneChange;
+		static bool scenechanged;
+		float R;
+		Ginput.GetState(55, R);
+		if (R != 0)
+			SceneChange = true;
+		else {
+			SceneChange = false;
+			scenechanged = false;
+		}
+		if (SceneChange && !scenechanged) {
+			ChangeScene();
+			SceneChange = false;
+			scenechanged = true;
+		}
+
 		float leftshift;
 		Ginput.GetState(14, leftshift);
 		bool isConnected = false;
