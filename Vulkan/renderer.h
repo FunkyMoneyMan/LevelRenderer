@@ -27,13 +27,21 @@ struct ATTRIBUTES
     float3 Ke; // emissive reflectivity
     uint illum; // illumination model
 };
+struct LIGHT {
+	uint type;
+	float radius;
+	float4 pos;
+	float4 color;
+	float4 dir;
+};
 struct SHADER_MODEL_DATA
 {
     float4 sunDirection, sunColor;
     matrix ViewMatrix, ProjectionMatrix;
     matrix matricies[1024];
     ATTRIBUTES materials[1024];
-	float4 sunAmbient, camPos;
+    float4 sunAmbient, camPos;
+	//LIGHT light[16];
 };
 StructuredBuffer<SHADER_MODEL_DATA> SceneData;
 // TODO: Part 4g
@@ -97,6 +105,13 @@ struct ATTRIBUTES
     float3 Ke; // emissive reflectivity
     uint illum; // illumination model
 };
+struct LIGHT {
+	uint type;
+	float radius;
+	float4 pos;
+	float4 color;
+	float4 dir;
+};
 struct SHADER_MODEL_DATA
 {
     float4 sunDirection, sunColor;
@@ -104,6 +119,7 @@ struct SHADER_MODEL_DATA
     matrix matricies[1024];
     ATTRIBUTES materials[1024];
     float4 sunAmbient, camPos;
+	//LIGHT light[16];
 };
 StructuredBuffer<SHADER_MODEL_DATA> SceneData;
 // TODO: Part 4g
@@ -150,10 +166,25 @@ float4 main(InputStruct inputObj) : SV_TARGET
 	float3 reflected = reflect(lightDir, inputObj.nrmW);
 	float intensity = pow(saturate(dot(viewDir, reflected)), SceneData[0].materials[mesh_ID].Ns);
 	final += float4(SceneData[0].sunColor.xyz * SceneData[0].materials[mesh_ID].Ks * intensity, 0.0f);
+	
 
 	return final;
+	
 }
 )";
+	//for (int i = 0; i < 16; i++) {
+	//	if (SceneData[0].light[i].type == 99)
+	//		break;
+	//	if (SceneData[0].light[i].type == 0) { //point
+	//		float3 lightDir = normalize(SceneData[0].light[i].pos - inputObj.posW);
+	//		float attenuation = 1.0f - saturate(length(SceneData[0].light[i].pos - inputObj.posW)/SceneData[0].light[i].radius);
+	//		float lightRatio = saturate(dot(lightDir, inputObj.nrmW));
+	//		lightRatio *= attenuation;
+	//		float3 result = lightRatio * SceneData[0].light[i].color * SceneData[0].materials[mesh_ID].Kd;
+	//		final += float4(result, 0);
+	//	} //else (SceneData[0].light[i].type == 1) { //spotlight
+
+	//	//}
 	////return float4(inputObj.nrmW, 1);
  //   float lightratio = saturate(dot(-normalize(SceneData[0].sunDirection), normalize(inputObj.nrmW)));
  //   float3 result = (saturate(lightratio + SceneData[0].sunAmbient) * SceneData[0].sunColor) * SceneData[0].materials[mesh_ID].Kd;
@@ -168,13 +199,20 @@ float4 main(InputStruct inputObj) : SV_TARGET
 
 	//return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + specular;
  //   //return float4(SceneData[0].sunAmbient + result, 1) * float4(SceneData[0].materials[mesh_ID].Kd, 1) + float4(reflectedLight, 0); // TODO: Part 1a
-
+struct LIGHT {
+	unsigned type = 99;
+	float radius;
+	GW::MATH::GVECTORF pos;
+	GW::MATH::GVECTORF color;
+	GW::MATH::GVECTORF dir;
+};
 struct SHADER_MODEL_DATA {
 	GW::MATH::GVECTORF sunDirection, sunColor;
 	GW::MATH::GMATRIXF ViewMatrix, ProjectionMatrix;
 	GW::MATH::GMATRIXF matricies[MAX_SUBMESH_PER_DRAW];
 	H2B::ATTRIBUTES materials[MAX_SUBMESH_PER_DRAW];
 	GW::MATH::GVECTORF sunAmbient, camPos;
+	//LIGHT light[16];
 };
 struct Mesh_Struct {
 	std::vector<GW::MATH::GMATRIXF> WorldMatrices;
@@ -254,16 +292,52 @@ public:
 	bool ParseFile(const char* file) {
 		std::string line;
 		std::ifstream myfile(file);
+		int currentLight = 0;
 		if (!myfile.is_open()) {
 			std::cout << "Unable to open file";
 			return false;
 		}
 		while (std::getline(myfile, line)) {
+			//if (line == "LIGHT") {
+			//	std::getline(myfile, line);
+			//	if (line == "Point") {
+			//		ShaderModelData.light[currentLight].type = 0;
+			//		std::getline(myfile, line);
+			//		std::getline(myfile, line);
+			//		std::getline(myfile, line);
+			//		std::getline(myfile, line);
+			//		std::string delimiter = ")";
+			//		size_t pos = 0;
+			//		std::string token;
+			//		line = line.substr(13, (line.find(delimiter) - 13));
+			//		delimiter = ",";
+			//		for (int o = 0; o < 4; o++) {
+			//			pos = line.find(delimiter);
+			//			token = line.substr(0, pos);
+			//			ShaderModelData.light[currentLight].pos.data[o] = std::stof(token);
+			//			line.erase(0, pos + delimiter.length());
+			//		}
+			//		std::getline(myfile, line);
+			//		ShaderModelData.light[currentLight].radius = std::stof(line);
+			//		std::getline(myfile, line);
+			//		delimiter = "=";
+			//		line = line.substr(line.find('=') + 1, line.find(')')-(line.find('=') + 1));
+			//		delimiter = ")";
+			//		pos = 0;
+			//		for (int o = 0; o < 3; o++) {
+			//			delimiter = ",";
+			//			pos = line.find(delimiter);
+			//			token = line.substr(0, pos);
+			//			ShaderModelData.light[currentLight].color.data[o] = std::stof(token);
+			//			line.erase(0, pos + delimiter.length() + 3);
+			//		}
+			//		currentLight++;
+			//	}
+			//}
 			if (line == "MESH") {
 				std::getline(myfile, line);
 				std::string delimiter = ".";
 				std::string MeshName = line.substr(0, line.find(delimiter));
-				//std::cout << MeshName << "\n";
 				GW::MATH::GMATRIXF Matrix;
 				int i = 0;
 				for (int y = 0; y < 4; y++) {
