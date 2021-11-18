@@ -282,7 +282,7 @@ public:
 					}
 				}
 				if (MeshMap.find(MeshName) == MeshMap.end()) {
-					std::string filePath = "../../";
+					std::string filePath = "../../Assets/";
 					filePath.append(MeshName);
 					filePath.append(".h2b");
 					Mesh_Struct tStruct = { };
@@ -709,16 +709,20 @@ public:
 		Vertexes.clear();
 		Indexes.clear();
 		MeshMap.clear();
+		VertexOffsets.clear();
+		IndexOffsets.clear();
+		MatrixOffset.clear();
+		MaterialOffset.clear();
 		if (CurrentScene == 0) {
-			if (!ParseFile("../GameLevel.txt"))
+			if (!ParseFile("../GameLevel1.txt"))
 				exit(69);
-			std::cout << "First";
+			std::cout << "DungeonLevel\n";
 			CurrentScene = 1;
 		}
 		else {
 			if (!ParseFile("../GameLevel.txt"))
 				exit(69);
-			std::cout << "Second";
+			std::cout << "SpaceLevel\n";
 			CurrentScene = 0;
 		}
 		int externalI = 0;

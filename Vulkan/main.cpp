@@ -29,7 +29,7 @@ int main()
 	if (+win.Create(0, 0, 800, 600, GWindowStyle::WINDOWEDBORDERED))
 	{
 		// TODO: Part 1a
-		win.SetWindowName("Cameron Taylor - Lab 4 - Vulkan");
+		win.SetWindowName("Cameron Taylor - Level Renderer - Vulkan");
 		VkClearValue clrAndDepth[2];
 		clrAndDepth[0].color = { {181.0f/255.0f, 181.0f / 255.0f, 181.0f / 255.0f, 1} };
 		clrAndDepth[1].depthStencil = { 1.0f, 0u };
